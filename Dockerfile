@@ -20,10 +20,11 @@ RUN npm run build
 
 RUN npm prune --production
 
-RUN mkdir -p /app/storage/images /app/storage/audio /app/storage/video /app/storage/cache
+# Use /tmp for Railway (ephemeral filesystem)
+RUN mkdir -p /tmp/avatar-bot-storage/images /tmp/avatar-bot-storage/audio /tmp/avatar-bot-storage/video /tmp/avatar-bot-storage/cache
 
 ENV NODE_ENV=production
-ENV STORAGE_DIR=/app/storage
+ENV STORAGE_DIR=/tmp/avatar-bot-storage
 
 EXPOSE 3000
 

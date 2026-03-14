@@ -1,211 +1,183 @@
 # Telegram Avatar Video Bot
 
-A Telegram bot that generates AI talking avatar videos from reference images with custom voice scripts.
+A Telegram bot that generates AI talking avatar videos from reference images with custom voice scripts. Designed to be deployed entirely from your phone via Railway.
 
 ## How It Works
 
-1. User sends `/avatar` to start
-2. User uploads a clear face photo
-3. User types the script they want the avatar to say
-4. User picks a voice
-5. Bot generates a talking avatar video and sends it back
+1. Send `/avatar` in Telegram
+2. Upload a face photo
+3. Type the script you want the avatar to say
+4. Pick a voice
+5. Bot generates and sends back a talking avatar video
+
+## Deploy from Mobile (Railway)
+
+Everything below can be done from your phone — no laptop needed.
+
+### Step 1: Get Your API Keys
+
+You need 3 API keys. Get them from your phone's browser:
+
+| Service | Where | What You Need |
+|---------|-------|---------------|
+| **Telegram Bot** | Open Telegram → message [@BotFather](https://t.me/BotFather) → `/newbot` | Copy the bot token |
+| **ElevenLabs** | [elevenlabs.io](https://elevenlabs.io) → Sign up → Profile → API Key | Copy the API key |
+| **Replicate** | [replicate.com](https://replicate.com) → Sign up → Account → API tokens | Copy the token |
+
+### Step 2: Deploy on Railway
+
+1. Open [railway.com](https://railway.com) on your phone
+2. Sign up / log in (GitHub login works)
+3. Tap **"New Project"** → **"Deploy from GitHub Repo"**
+4. Connect your GitHub and select this repo
+5. Railway will auto-detect the Dockerfile and start building
+
+### Step 3: Add Redis
+
+1. In your Railway project, tap **"+ New"** → **"Database"** → **"Redis"**
+2. Railway automatically sets `REDIS_URL` — no config needed
+
+### Step 4: Set Environment Variables
+
+In your Railway project → click your service → **"Variables"** tab → add:
+
+```
+TELEGRAM_BOT_TOKEN=<your bot token from BotFather>
+ELEVENLABS_API_KEY=<your ElevenLabs key>
+REPLICATE_API_TOKEN=<your Replicate token>
+LIPSYNC_PROVIDER=replicate
+```
+
+That's it. Railway auto-provides `PORT`, `REDIS_URL`, and `RAILWAY_PUBLIC_DOMAIN`. The bot auto-detects these and configures webhooks.
+
+### Step 5: Generate a Public Domain
+
+1. In Railway → your service → **"Settings"** tab
+2. Under **"Networking"** → tap **"Generate Domain"**
+3. You'll get something like `avatar-bot-production-xxxx.up.railway.app`
+4. The bot auto-detects this and sets up Telegram webhooks
+
+### Step 6: Use It
+
+Open Telegram → find your bot → send `/start`.
+
+## Bot Commands
+
+| Command | What It Does |
+|---------|-------------|
+| `/start` | Welcome message and instructions |
+| `/avatar` | Start creating an avatar video |
+| `/voices` | List available voice options |
+| `/cancel` | Cancel current session |
+| `/status` | Check queue status |
+
+## User Flow
+
+```
+/avatar → Upload Photo → Type Script → Pick Voice → Wait ~2 min → Get Video
+```
 
 ## Architecture
 
 ```
-User → Telegram → Bot → ElevenLabs (TTS) → Replicate/D-ID (lip-sync) → FFmpeg → Telegram
+Telegram ──→ Bot (Express/Webhook)
+                │
+                ├──→ ElevenLabs API (text → speech audio)
+                │
+                ├──→ Replicate SadTalker (image + audio → lip-sync video)
+                │    (or D-ID as alternative)
+                │
+                └──→ FFmpeg (convert to Telegram-compatible MP4)
+                │
+                └──→ Telegram (send video back)
+
+BullMQ + Redis ──→ Job queue (prevents overload, handles concurrency)
 ```
-
-- **ElevenLabs** – converts script text to natural speech audio
-- **Replicate (SadTalker)** or **D-ID** – generates lip-synced talking head video from image + audio
-- **FFmpeg** – converts output to Telegram-compatible MP4
-- **BullMQ + Redis** – optional job queue for concurrent processing
-
-## Prerequisites
-
-- Node.js 18+
-- FFmpeg installed (`apt install ffmpeg` or `brew install ffmpeg`)
-- Redis (optional, for job queue – works without it in direct mode)
-
-## Required API Keys
-
-| Service | Get Key | Purpose |
-|---------|---------|---------|
-| Telegram Bot | [@BotFather](https://t.me/BotFather) | Bot token |
-| ElevenLabs | [elevenlabs.io](https://elevenlabs.io) | Text-to-speech |
-| Replicate | [replicate.com](https://replicate.com) | Lip-sync (SadTalker) |
-| D-ID (alt) | [d-id.com](https://www.d-id.com) | Lip-sync (alternative) |
-
-## Quick Start
-
-### 1. Clone and install
-
-```bash
-git clone <repo-url>
-cd telegram-avatar-video-bot
-npm install
-```
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-# Edit .env with your API keys
-```
-
-Minimum required variables:
-```
-TELEGRAM_BOT_TOKEN=your_token
-ELEVENLABS_API_KEY=your_key
-REPLICATE_API_TOKEN=your_token
-```
-
-### 3. Run
-
-```bash
-# Development (polling mode)
-npm run dev
-
-# Production build
-npm run build
-npm start
-```
-
-### 4. Docker
-
-```bash
-# With Redis job queue
-docker-compose up -d
-
-# Or standalone
-docker build -t avatar-bot .
-docker run -d --env-file .env -p 3000:3000 avatar-bot
-```
-
-## Configuration
-
-### Lip-sync Provider
-
-Set `LIPSYNC_PROVIDER` in `.env`:
-
-- `replicate` (default) – Uses SadTalker via Replicate. Good quality, pay-per-use.
-- `did` – Uses D-ID API. Higher quality, subscription-based.
-
-### Webhook vs Polling
-
-- **Polling** (default): Set `USE_WEBHOOK=false`. Best for development.
-- **Webhook**: Set `USE_WEBHOOK=true` and `BASE_URL=https://your-domain.com`. Best for production.
-
-### Job Queue
-
-Redis is optional. Without it, jobs process directly (one at a time per request). With Redis, jobs are queued via BullMQ with configurable concurrency.
-
-```
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-MAX_CONCURRENT_JOBS=3
-```
-
-## Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message and instructions |
-| `/avatar` | Start avatar creation flow |
-| `/voices` | List available voices |
-| `/cancel` | Cancel current session |
-| `/status` | Check queue status |
 
 ## Project Structure
 
 ```
 ├── src/
-│   ├── server.ts          # Express server + entry point
-│   ├── bot.ts             # Telegram bot handlers
-│   ├── sessionManager.ts  # Per-user session state
-│   └── jobQueue.ts        # BullMQ job queue
+│   ├── server.ts          # Express + entry point
+│   ├── bot.ts             # Telegram command/message handlers
+│   ├── sessionManager.ts  # Per-user conversation state
+│   └── jobQueue.ts        # BullMQ job queue (Redis)
 ├── services/
-│   ├── elevenlabs.ts      # ElevenLabs TTS integration
-│   ├── avatarGenerator.ts # Replicate/D-ID lip-sync
+│   ├── elevenlabs.ts      # ElevenLabs TTS
+│   ├── avatarGenerator.ts # Replicate SadTalker / D-ID lip-sync
 │   └── videoPipeline.ts   # Full generation pipeline
 ├── utils/
-│   ├── ffmpeg.ts          # FFmpeg video operations
-│   ├── fileStorage.ts     # File storage management
+│   ├── ffmpeg.ts          # Video conversion
+│   ├── fileStorage.ts     # Temp file management
 │   └── logger.ts          # Winston logger
 ├── config/
-│   └── env.ts             # Environment configuration
+│   └── env.ts             # Env config (auto-detects Railway)
+├── railway.json           # Railway deployment config
 ├── Dockerfile
-├── docker-compose.yml
-└── .env.example
+└── docker-compose.yml     # Local dev with Redis
 ```
 
-## Deploy to VPS
+## Railway-Specific Behavior
 
-### Option A: Docker (Recommended)
+The bot auto-detects Railway and adapts:
+
+- **`RAILWAY_PUBLIC_DOMAIN`** → auto-enables webhook mode, sets `BASE_URL`
+- **`REDIS_URL`** → auto-connects to Railway Redis add-on
+- **`PORT`** → Railway assigns dynamically
+- **Ephemeral storage** → uses `/tmp` for temp files (cleaned up after sending)
+- **Health check** → `GET /health` endpoint for Railway monitoring
+
+## Running Locally (Optional)
+
+If you also want to run on your machine:
 
 ```bash
-# On your VPS
-git clone <repo-url>
-cd telegram-avatar-video-bot
 cp .env.example .env
-# Edit .env with your keys
+# Fill in your API keys
 
-# Set webhook mode for production
-echo "USE_WEBHOOK=true" >> .env
-echo "BASE_URL=https://your-domain.com" >> .env
-
-docker-compose up -d
-```
-
-### Option B: Direct
-
-```bash
-# Install dependencies
-sudo apt update
-sudo apt install -y nodejs npm ffmpeg redis-server
-
-# Clone and setup
-git clone <repo-url>
-cd telegram-avatar-video-bot
+# Without Redis (direct processing):
 npm install
-npm run build
+npm run dev
 
-# Use PM2 for process management
-npm install -g pm2
-pm2 start dist/src/server.js --name avatar-bot
-pm2 save
-pm2 startup
+# With Redis:
+docker-compose up -d redis
+npm run dev
 ```
 
-### Reverse Proxy (Nginx)
+## Available Voices
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
+| # | Voice |
+|---|-------|
+| 1 | Rachel (Female) |
+| 2 | Drew (Male) |
+| 3 | Antoni (Male) |
+| 4 | Bella (Female) |
+| 5 | Elli (Female) |
+| 6 | Josh (Male) |
 
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
+## Lip-Sync Providers
 
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
+| Provider | Set `LIPSYNC_PROVIDER=` | Pricing | Quality |
+|----------|------------------------|---------|---------|
+| **Replicate (SadTalker)** | `replicate` (default) | Pay-per-run (~$0.05/video) | Good |
+| **D-ID** | `did` | Subscription | Higher |
 
-## Performance Notes
+## Costs
 
-- Avatar caching: Photos are cached per user so they can reuse them with "use cached"
-- Job queue prevents duplicate processing per user
-- Stale sessions are automatically cleaned up after 1 hour
-- Intermediate files are cleaned up after sending or on failure
-- Configurable concurrency via `MAX_CONCURRENT_JOBS`
+Approximate per-video costs:
+- ElevenLabs: ~$0.01-0.03 (depends on script length)
+- Replicate SadTalker: ~$0.05
+- Railway: Free tier includes $5/month credit
+- Redis on Railway: Included in free tier
+
+**~$0.06-0.08 per video** on the default stack.
 
 ## Troubleshooting
 
-- **Bot not responding**: Check `TELEGRAM_BOT_TOKEN` and that no other instance is running
-- **Video generation fails**: Verify API keys for ElevenLabs and Replicate/D-ID
-- **FFmpeg errors**: Ensure FFmpeg is installed (`ffmpeg -version`)
-- **Queue not working**: Check Redis connection (`redis-cli ping`)
+| Problem | Fix |
+|---------|-----|
+| Bot not responding | Check `TELEGRAM_BOT_TOKEN` in Railway variables |
+| No webhook | Ensure you generated a domain in Railway Settings → Networking |
+| Video fails | Check `REPLICATE_API_TOKEN` is valid |
+| Queue not working | Verify Redis add-on is connected in Railway |
+| Build fails | Check Railway build logs for missing env vars |

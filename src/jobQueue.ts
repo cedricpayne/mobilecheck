@@ -18,12 +18,26 @@ export interface VideoJobResult {
 
 const QUEUE_NAME = "video-generation";
 
-const redisConnection = {
-  host: config.redis.host,
-  port: config.redis.port,
-  password: config.redis.password,
-  maxRetriesPerRequest: null,
-};
+/**
+ * Build Redis connection config. Supports REDIS_URL (Railway) or individual vars.
+ */
+function getRedisConnection() {
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    return {
+      url: redisUrl,
+      maxRetriesPerRequest: null as null,
+    };
+  }
+  return {
+    host: config.redis.host,
+    port: config.redis.port,
+    password: config.redis.password,
+    maxRetriesPerRequest: null as null,
+  };
+}
+
+const redisConnection = getRedisConnection();
 
 let videoQueue: Queue<VideoJobData, VideoJobResult> | null = null;
 let videoWorker: Worker<VideoJobData, VideoJobResult> | null = null;
